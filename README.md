@@ -108,3 +108,6 @@ Converts the output format on-the-fly to a next-gen format like WebP and drops t
 | `MaxDimension` | `int` | `3000` | The maximum width or height allowed for a resizing request to avoid DoS attacks. |
 | `CacheDuration` | `TimeSpan` | `12 Hours` | How long the resized image remains cached on the server disk. |
 | `CacheControlHeader` | `string` | `public, max-age=43200` | The standard HTTP header sent to client browsers for client-side caching. |
+
+## ⭐ Support the Project
+If you find this package useful, please consider giving it a **Star** on GitHub! It helps the project grow and motivates further development.
