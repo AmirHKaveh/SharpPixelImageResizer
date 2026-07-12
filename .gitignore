@@ -1,0 +1,11 @@
+# Build folders
+**/bin/
+**/obj/
+
+# Visual Studio
+.vs/
+.vscode/
+
+# Project folders
+ImageResizer/Docs/
+ImageResizer/Properties/
