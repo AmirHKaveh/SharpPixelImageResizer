@@ -10,11 +10,12 @@ A high-performance, asynchronous, and **DoS-protected** image resizing middlewar
 
 ## 🌟 Features
 
--  **High Performance:** Powered by SkiaSharp v3 for fast, native image manipulation.
--  **DoS Protection:** Automatically prevents server resource exhaustion by restricting resizing requests to predefined dimensions and qualities.
--  **Smart Caching:** Server-side caching for processed images and customizable `Cache-Control` headers for browsers.
--  **Modern Formats:** Supports converting images to next-gen formats like **WebP** on-the-fly.
--  **Flexible Processing Modes:** Support for `crop` (smart cropping) and `pad` (padding with backgrounds).
+-  **High Performance:** Powered by SkiaSharp v3 for lightning-fast, native image manipulation.
+-  **DoS Protection:** Enforces safety ceilings on dimensions to prevent server resource exhaustion.
+-  **Smart Two-Layer Cache:** Combines fast `IMemoryCache` with a persistent `Disk Cache` to offload CPU and RAM.
+-  **Throttled Midnight Cleaner:** An automated background worker (`HostedService`) that wakes up at a user-defined hour (e.g., 3 AM) to clean expired files without locking your disk or affecting active users.
+-  **Custom Pad Color:** Seamlessly fill empty spaces in `pad` mode using standard HEX codes (e.g., `bg=ff0000`).
+-  **Next-Gen Formats:** Convert legacy images to modern **WebP** on-the-fly to boost your SEO and load speed.
 
 ---
 
@@ -41,12 +42,20 @@ using Mind.AspNetCore.ImageResizer;
 
 var builder = WebApplication.CreateBuilder(args);
 
-// Add services with DoS protection and cache configurations
+// Register services with production-ready configurations
 builder.Services.AddImageResizer(options =>
 {
-    options.MaxDimension = 2000;                          // Safety ceiling for width/height
-    options.CacheDuration = TimeSpan.FromHours(12);        // Server-side disk cache lifetime
-    options.CacheControlHeader = "public, max-age=43200"; // Browser-side cache (12 Hours)
+    options.MaxDimension = 3000;                          // Safety ceiling for width/height (DoS Protection)
+    options.CacheDuration = TimeSpan.FromDays(7);         // Server-side cache lifetime
+    options.CacheControlHeader = "public, max-age=604800"; // Browser-side cache header (7 Days)
+    options.CacheFolderName = "_imagecache";              // Directory name inside wwwroot/ContentRoot
+    
+    // Smart Background Midnight Cleaner Settings
+    options.EnableBackgroundCleanup = true;               // Enable automated disk cleanup
+    options.ExecutionHour = 3;                            // Wake up precisely at 3:00 AM
+    options.UseUtcTime = true;                            // Use UTC time instead of Server Local Time
+    options.CleanupBatchSize = 50;                        // Process files in small safe chunks
+    options.CleanupThrottleDelayMs = 100;                 // Rest for 100ms after each batch to prevent Disk I/O spikes
 });
 
 var app = builder.Build();
@@ -56,7 +65,7 @@ app.UseImageResizer();
 
 app.UseStaticFiles();
 
-app.MapGet("/", () => "Image Resizer is running smoothly! 🎉");
+app.MapGet("/", () => "Image Resizer Middleware is active and optimized! ⚡");
 
 app.Run();
 ```
@@ -78,10 +87,10 @@ Maintains the original aspect ratio automatically while scaling the width down t
 <img src="/images/avatar.jpg?w=400&h=400&mode=crop" alt="Center Cropped" />
 ```
 
-3. Padded Fit (mode=pad)Fits the entire image inside an $800 \times 600$ bounding box without cropping anything. Any empty spaces are padded with a solid background color (perfect for e-commerce product grids).
+3. Padded Fit with Custom Background (mode=pad & bg)
 
 ```bash
-<img src="/images/product.jpg?w=800&h=600&mode=pad" alt="Padded Product" />
+<img src="/images/product.jpg?w=800&h=600&mode=pad&bg=e0e0e0" alt="Padded Product" />
  ```
 
 4. Format Conversion & Quality Compression (format & quality)
