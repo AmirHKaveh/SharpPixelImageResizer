@@ -9,7 +9,7 @@
             var options = new ImageResizerOptions();
             configureOptions?.Invoke(options);
             services.AddSingleton(options);
-
+            services.AddHostedService<CacheCleanerHostedService>();
             return services;
         }
 

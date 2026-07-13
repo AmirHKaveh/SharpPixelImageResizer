@@ -1,18 +1,10 @@
-﻿using Microsoft.AspNetCore.Hosting;
-using Microsoft.AspNetCore.Http;
-using Microsoft.Extensions.Caching.Memory;
+﻿using Microsoft.Extensions.Caching.Memory;
 using Microsoft.Extensions.FileProviders;
-using Microsoft.Extensions.Logging;
 
 using SkiaSharp;
 
-using System;
-using System.IO;
-using System.Linq;
-using System.Net.Http;
-using System.Threading.Tasks;
-
-using static System.Net.Mime.MediaTypeNames;
+using System.Security.Cryptography;
+using System.Text;
 
 namespace ImageResizer
 {
@@ -25,7 +17,7 @@ namespace ImageResizer
         private readonly ImageResizerOptions _options;
 
         private static readonly string[] AllowedExtensions = { "png", "jpg", "jpeg", "webp" };
-        private static readonly string[] ResizeQueryKeys = { "w", "h", "format", "quality", "mode" };
+        private static readonly string[] ResizeQueryKeys = { "w", "h", "format", "quality", "mode", "bg" };
 
         public ImageResizerMiddleware(
             RequestDelegate next,
@@ -104,15 +96,31 @@ namespace ImageResizer
                 return cachedBytes;
             }
 
+            string cacheFolderPath = Path.Combine(_env.WebRootPath ?? _env.ContentRootPath, _options.CacheFolderName);
+            string cacheFileName = GetMd5Hash(cacheKey) + "." + resizeParams.Format;
+            string fullCachePath = Path.Combine(cacheFolderPath, cacheFileName);
+
+            if (_options.EnableDiskCache && File.Exists(fullCachePath))
+            {
+                var fileCreationTime = _options.UseUtcTime ? File.GetLastWriteTimeUtc(fullCachePath) : File.GetLastWriteTime(fullCachePath);
+
+                if (DateTime.UtcNow - fileCreationTime < _options.CacheDuration)
+                {
+                    var diskBytes = await File.ReadAllBytesAsync(fullCachePath);
+                    _memoryCache.Set(cacheKey, diskBytes, _options.CacheDuration);
+                    return diskBytes;
+                }
+                else
+                {
+                    try { File.Delete(fullCachePath); } catch { _logger.LogWarning("Could not delete expired cache file."); }
+                }
+            }
+
             byte[] processedBytes;
             using (var fileStream = new FileStream(imagePath, FileMode.Open, FileAccess.Read, FileShare.Read, 4096, useAsync: true))
-            using (var memoryStream = new MemoryStream())
+            using (var managedStream = new SKManagedStream(fileStream, false))
+            using (var codec = SKCodec.Create(managedStream))
             {
-                await fileStream.CopyToAsync(memoryStream);
-                memoryStream.Position = 0;
-
-                using var managedStream = new SKManagedStream(memoryStream, false);
-                using var codec = SKCodec.Create(managedStream);
                 if (codec == null)
                     throw new ArgumentException("Unable to create a decoder for the provided image data.");
 
@@ -135,7 +143,7 @@ namespace ImageResizer
                 else if (resizeParams.H == 0 && resizeParams.W != 0)
                     targetH = (int)Math.Round(bitmap.Height * (float)targetW / bitmap.Width);
 
-                using var resizedBitmap = ResizeByMode(bitmap, resizeParams.Mode, targetW, targetH);
+                using var resizedBitmap = ResizeByMode(bitmap, resizeParams, targetW, targetH);
                 using var resizedImage = SKImage.FromBitmap(resizedBitmap);
 
                 var encodeFormat = resizeParams.Format switch
@@ -149,22 +157,37 @@ namespace ImageResizer
                 processedBytes = encodedData.ToArray();
             }
 
+            if (_options.EnableDiskCache)
+            {
+                try
+                {
+                    if (!Directory.Exists(cacheFolderPath))
+                        Directory.CreateDirectory(cacheFolderPath);
+
+                    await File.WriteAllBytesAsync(fullCachePath, processedBytes);
+                }
+                catch (Exception ex)
+                {
+                    _logger.LogError(ex, "Failed to write image cache to disk at {Path}", fullCachePath);
+                }
+            }
+
             _memoryCache.Set(cacheKey, processedBytes, _options.CacheDuration);
             return processedBytes;
         }
 
-        private static SKBitmap ResizeByMode(SKBitmap source, string mode, int targetW, int targetH)
+        private static SKBitmap ResizeByMode(SKBitmap source, ResizeParams resizeParams, int targetW, int targetH)
         {
             var samplingOptions = new SKSamplingOptions(SKFilterMode.Linear, SKMipmapMode.None);
 
-            switch (mode)
+            switch (resizeParams.Mode)
             {
                 case "stretch":
                     return source.Resize(new SKImageInfo(targetW, targetH, SKImageInfo.PlatformColorType, source.AlphaType), samplingOptions);
                 case "crop":
                     return CropAndResize(source, targetW, targetH);
                 case "pad":
-                    return ResizeWithPadding(source, targetW, targetH);
+                    return ResizeWithPadding(source, targetW, targetH, resizeParams.BgColor);
                 case "max":
                 default:
                     var (fitW, fitH) = FitWithinBox(source.Width, source.Height, targetW, targetH);
@@ -205,19 +228,21 @@ namespace ImageResizer
             var cropRect = new SKRect(left, top, left + cropW, top + cropH);
             var destRect = new SKRect(0, 0, cropW, cropH);
 
-            using var cropped = new SKBitmap(cropW, cropH, source.ColorType, source.AlphaType);
+            var cropped = new SKBitmap(cropW, cropH, source.ColorType, source.AlphaType);
             using (var canvas = new SKCanvas(cropped))
             {
                 using var skImage = SKImage.FromBitmap(source);
                 canvas.DrawImage(skImage, cropRect, destRect, new SKSamplingOptions(SKFilterMode.Linear, SKMipmapMode.None));
             }
 
-            return cropped.Resize(
-                new SKImageInfo(targetW, targetH, SKImageInfo.PlatformColorType, source.AlphaType),
-                new SKSamplingOptions(SKFilterMode.Linear, SKMipmapMode.None));
+            var samplingOptions = new SKSamplingOptions(SKFilterMode.Linear, SKMipmapMode.None);
+            var finalResized = cropped.Resize(new SKImageInfo(targetW, targetH, SKImageInfo.PlatformColorType, source.AlphaType), samplingOptions);
+            cropped.Dispose();
+
+            return finalResized;
         }
 
-        private static SKBitmap ResizeWithPadding(SKBitmap source, int targetW, int targetH)
+        private static SKBitmap ResizeWithPadding(SKBitmap source, int targetW, int targetH, string hexColor)
         {
             var (fitW, fitH) = FitWithinBox(source.Width, source.Height, targetW, targetH);
             var samplingOptions = new SKSamplingOptions(SKFilterMode.Linear, SKMipmapMode.None);
@@ -226,7 +251,15 @@ namespace ImageResizer
             var padded = new SKBitmap(targetW, targetH, source.ColorType, source.AlphaType);
 
             using var canvas = new SKCanvas(padded);
-            canvas.Clear(source.AlphaType == SKAlphaType.Opaque ? SKColors.White : SKColors.Transparent);
+
+            if (SKColor.TryParse(hexColor.StartsWith("#") ? hexColor : "#" + hexColor, out var parsedColor))
+            {
+                canvas.Clear(parsedColor);
+            }
+            else
+            {
+                canvas.Clear(source.AlphaType == SKAlphaType.Opaque ? SKColors.White : SKColors.Transparent);
+            }
 
             var left = (targetW - fitW) / 2;
             var top = (targetH - fitH) / 2;
@@ -293,6 +326,15 @@ namespace ImageResizer
                     resizeParams.Mode = requestedMode;
             }
 
+            if (query.ContainsKey("bg"))
+            {
+                var bg = query["bg"].ToString().Replace("#", "");
+                if (bg.Length == 6 || bg.Length == 8)
+                {
+                    resizeParams.BgColor = bg;
+                }
+            }
+
             return resizeParams;
         }
 
@@ -304,6 +346,20 @@ namespace ImageResizer
                 "webp" => "image/webp",
                 _ => "image/jpeg"
             };
+        }
+
+        private static string GetMd5Hash(string input)
+        {
+            using (var md5 = MD5.Create())
+            {
+                var bytes = md5.ComputeHash(Encoding.UTF8.GetBytes(input));
+                var builder = new StringBuilder();
+                foreach (var b in bytes)
+                {
+                    builder.Append(b.ToString("x2"));
+                }
+                return builder.ToString();
+            }
         }
     }
 }
