@@ -12,7 +12,7 @@
 	  
 	  <GeneratePackageOnBuild>true</GeneratePackageOnBuild>
     <PackageId>SharpPixel.AspNetCore.ImageResizer</PackageId>
-    <Version>2.1.1</Version>
+    <Version>2.1.2</Version>
     <Authors>Kaveh</Authors>
     <Description>A high-performance, asynchronous, and DoS-protected image resizing middleware for ASP.NET Core using SkiaSharp.</Description>
     <PackageTags>aspnetcore;middleware;image-resize;skiasharp;webp;jpeg;png</PackageTags>

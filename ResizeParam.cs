@@ -6,7 +6,7 @@
         public TimeSpan CacheDuration { get; set; } = TimeSpan.FromDays(7);
         public string CacheControlHeader { get; set; } = "public, max-age=604800";
         public string[] AllowedFormats { get; set; } = { "webp", "jpeg", "jpg", "png" };
-        public bool EnableDiskCache { get; set; } = true;
+        public bool EnableDiskCache { get; set; } = false;
         public string CacheFolderName { get; set; } = "_imagecache";
 
         public bool EnableBackgroundCleanup { get; set; } = true;
