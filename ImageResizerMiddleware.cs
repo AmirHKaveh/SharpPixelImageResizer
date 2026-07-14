@@ -6,7 +6,7 @@ using SkiaSharp;
 using System.Security.Cryptography;
 using System.Text;
 
-namespace ImageResizer
+namespace SharpPixel.AspNetCore.ImageResizer
 {
     public class ImageResizerMiddleware
     {

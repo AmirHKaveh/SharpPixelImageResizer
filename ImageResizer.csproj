@@ -1,7 +1,7 @@
 ﻿<Project Sdk="Microsoft.NET.Sdk.Web">
 
   <PropertyGroup>
-    <TargetFramework>net9.0</TargetFramework>
+    <TargetFrameworks>net6.0;net7.0;net8.0;net9.0</TargetFrameworks>
     <ImplicitUsings>enable</ImplicitUsings>
     <Nullable>enable</Nullable>
 	  <IsPackable>true</IsPackable>
@@ -12,7 +12,7 @@
 	  
 	  <GeneratePackageOnBuild>true</GeneratePackageOnBuild>
     <PackageId>SharpPixel.AspNetCore.ImageResizer</PackageId>
-    <Version>1.1.0</Version>
+    <Version>2.1.1</Version>
     <Authors>Kaveh</Authors>
     <Description>A high-performance, asynchronous, and DoS-protected image resizing middleware for ASP.NET Core using SkiaSharp.</Description>
     <PackageTags>aspnetcore;middleware;image-resize;skiasharp;webp;jpeg;png</PackageTags>

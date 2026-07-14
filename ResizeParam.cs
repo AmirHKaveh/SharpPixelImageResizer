@@ -1,4 +1,4 @@
-﻿namespace ImageResizer
+﻿namespace SharpPixel.AspNetCore.ImageResizer
 {
     public class ImageResizerOptions
     {
